@@ -2,6 +2,12 @@
 
 **Drop a PDF or EPUB. Get an Obsidian vault.**
 
+[![VaultForge Screenshot](https://raw.githubusercontent.com/julianhilgemann/vaultforge/refs/heads/main/vaultforge_main_screenshot_03042026.png)](https://julianhilgemann.github.io/vaultforge/)
+
+🔗 **[Live Demo → julianhilgemann.github.io/vaultforge](https://julianhilgemann.github.io/vaultforge/)**
+
+---
+
 VaultForge extracts knowledge from documents and transforms it into a structured, interconnected [Obsidian](https://obsidian.md) vault — atomic notes with `[[wikilinks]]`, concept tags, and a live knowledge graph. No install. No backend. No build step. One HTML file.
 
 ---
