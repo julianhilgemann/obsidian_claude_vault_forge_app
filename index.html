@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultForge — Knowledge Extraction Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  :root {
+    --bg: #0A0A0F;
+    --surface: #111118;
+    --card: #18181F;
+    --card2: #1E1E27;
+    --border: #1F1F2E;
+    --border-light: #2A2A3D;
+    --accent: #D4723C;
+    --accent-dim: rgba(212,114,60,0.10);
+    --accent-glow: rgba(212,114,60,0.20);
+    --blue: #1B6FD8;
+    --blue-light: #5B9CF6;
+    --blue-dim: rgba(91,156,246,0.10);
+    --text: #F2F2F7;
+    --text-muted: #636380;
+    --text-dim: #3A3A52;
+    --success: #34C759;
+    --warn: #FF9F0A;
+    --font-d: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-m: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --radius: 14px;
+    --radius-sm: 10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--font-d);overflow-x:hidden;-webkit-font-smoothing:antialiased;}
+
+  /* NOISE OVERLAY */
+  body::before{
+    content:'';position:fixed;inset:0;
+    background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    opacity:0.18;pointer-events:none;z-index:0;
+  }
+  #app{position:relative;z-index:1;max-width:1140px;margin:0 auto;padding:0 28px;}
+
+  /* HEADER */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:22px 0 28px;
+    border-bottom:1px solid var(--border);
+    margin-bottom:32px;
+  }
+  .logo{display:flex;align-items:center;gap:11px;}
+  .logo-svg{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .logo-svg svg{width:34px;height:34px;}
+  .logo-name{font-size:16px;font-weight:700;letter-spacing:-0.2px;color:var(--text);}
+  .logo-name em{color:var(--text-muted);font-style:normal;font-weight:400;}
+  .logo-tagline{font-size:11px;color:var(--text-dim);font-weight:400;margin-top:2px;}
+  .header-meta{font-size:11px;color:var(--text-dim);letter-spacing:0.3px;font-weight:500;}
+
+  /* SCREENS */
+  .screen{display:none;}
+  .screen.active{display:block;}
+  #screen-idle,#screen-parsing{display:none;}
+  #screen-idle.active,#screen-parsing.active{display:flex;}
+
+  /* ═══ IDLE SCREEN ═══ */
+  #screen-idle{
+    flex-direction:column;align-items:center;
+    padding:10px 0 80px;gap:40px;
+  }
+  .drop-zone{
+    width:100%;max-width:620px;
+    border:1.5px dashed var(--border-light);
+    border-radius:20px;padding:70px 40px 60px;
+    text-align:center;cursor:pointer;
+    transition:all 0.25s;background:var(--surface);
+    position:relative;overflow:hidden;
+  }
+  .drop-zone::before{
+    content:'';position:absolute;inset:0;
+    background:radial-gradient(ellipse at 50% -20%,rgba(91,156,246,0.05) 0%,transparent 65%);
+    pointer-events:none;transition:opacity 0.25s;
+  }
+  .drop-zone.drag-over{border-color:var(--blue-light);background:var(--card);}
+  .drop-zone.drag-over::before{opacity:2;}
+  .drop-zone:hover{border-color:var(--border-light);background:var(--card);}
+  .drop-icon{
+    font-size:52px;margin-bottom:22px;
+    display:block;
+    filter:drop-shadow(0 0 18px var(--accent-glow));
+  }
+  .drop-title{font-size:22px;font-weight:700;margin-bottom:10px;}
+  .drop-sub{font-family:var(--font-d);font-size:12px;color:var(--text-muted);letter-spacing:0.5px;}
+  .format-badges{display:flex;gap:8px;justify-content:center;margin-top:28px;}
+  .badge{
+    font-family:var(--font-d);font-size:10px;font-weight:500;
+    letter-spacing:1.5px;padding:5px 12px;border-radius:5px;text-transform:uppercase;
+  }
+  .badge-pdf{background:var(--accent-dim);color:var(--accent);border:1px solid rgba(212,114,60,0.25);}
+  .badge-epub{background:rgba(51,76,101,0.2);color:var(--blue-light);border:1px solid rgba(74,110,142,0.25);}
+  #file-input{display:none;}
+
+  .features-row{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+    width:100%;max-width:620px;
+  }
+  .feature{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:12px;padding:18px;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .feature-icon{font-size:20px;}
+  .feature-title{font-size:13px;font-weight:700;color:var(--text);}
+  .feature-desc{font-family:var(--font-d);font-size:10px;color:var(--text-muted);line-height:1.7;}
+
+  /* ═══ PARSING SCREEN ═══ */
+  #screen-parsing{
+    flex-direction:column;align-items:center;justify-content:center;
+    min-height:400px;gap:28px;
+  }
+  .parse-ring{
+    width:52px;height:52px;
+    border:2px solid var(--border);
+    border-top-color:var(--accent);
+    border-radius:50%;
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .parse-status{font-family:var(--font-d);font-size:12px;color:var(--text-muted);letter-spacing:0.5px;}
+
+  /* ═══ READY SCREEN ═══ */
+  #screen-ready{display:none;}
+  #screen-ready.active{display:grid;grid-template-columns:1fr 360px;gap:24px;padding-bottom:60px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;overflow:hidden;}
+  .panel-hdr{
+    padding:14px 20px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .panel-title{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);}
+  .panel-body{padding:20px;}
+
+  .doc-info{margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border);}
+  .doc-name{font-size:15px;font-weight:700;word-break:break-word;margin-bottom:5px;}
+  .doc-meta{font-family:var(--font-d);font-size:11px;color:var(--text-muted);}
+
+  .sections-list{max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;}
+  .sections-list::-webkit-scrollbar{width:3px;}
+  .sections-list::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:2px;}
+  .sec-item{
+    display:flex;align-items:center;gap:10px;padding:7px 8px;
+    border-radius:7px;cursor:pointer;transition:background 0.12s;
+  }
+  .sec-item:hover{background:var(--card);}
+  .sec-item input[type="checkbox"]{accent-color:var(--accent);width:13px;height:13px;flex-shrink:0;cursor:pointer;}
+  .sec-label{font-size:12px;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+  .sec-words{font-family:var(--font-d);font-size:10px;color:var(--text-dim);flex-shrink:0;}
+
+  /* Settings */
+  .form-group{margin-bottom:18px;}
+  label.lbl{display:block;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:7px;}
+  input[type="text"],input[type="password"]{
+    width:100%;background:var(--card);border:1px solid var(--border);
+    border-radius:7px;padding:9px 12px;color:var(--text);
+    font-family:var(--font-d);font-size:11px;outline:none;transition:border-color 0.15s;
+  }
+  input[type="text"]:focus,input[type="password"]:focus{border-color:var(--blue-light);box-shadow:0 0 0 3px rgba(91,156,246,0.12);}
+  .hint{font-family:var(--font-d);font-size:10px;color:var(--text-dim);margin-top:5px;line-height:1.6;}
+  .range-row{display:flex;align-items:center;gap:12px;}
+  input[type="range"]{flex:1;accent-color:var(--accent);}
+  .range-val{font-family:var(--font-d);font-size:14px;font-weight:500;color:var(--accent);width:18px;text-align:right;}
+  select.sel{
+    width:100%;background:var(--card);border:1px solid var(--border);
+    border-radius:7px;padding:9px 12px;color:var(--text);
+    font-family:var(--font-d);font-size:11px;outline:none;cursor:pointer;
+  }
+  select.sel option{background:var(--card);}
+
+  .btn-gen{
+    width:100%;background:var(--accent);color:#fff;border:none;
+    border-radius:9px;padding:14px;font-family:var(--font-d);
+    font-size:14px;font-weight:700;letter-spacing:0.3px;cursor:pointer;
+    transition:all 0.2s;box-shadow:0 4px 20px var(--accent-glow);
+  }
+  .btn-gen:hover{background:#C06530;transform:translateY(-1px);}
+  .btn-gen:active{transform:translateY(0);}
+  .btn-text{
+    background:none;border:none;color:var(--text-muted);
+    font-family:var(--font-d);font-size:10px;cursor:pointer;letter-spacing:0.5px;
+    padding:4px;
+  }
+  .btn-text:hover{color:var(--text);}
+
+  /* ═══ PROCESSING SCREEN ═══ */
+  #screen-processing{display:none;}
+  #screen-processing.active{display:flex;flex-direction:column;align-items:center;padding:60px 0;gap:30px;}
+  .proc-title{font-size:30px;font-weight:800;letter-spacing:-1px;}
+  .proc-title em{color:var(--accent);font-style:normal;}
+  .prog-wrap{
+    width:100%;max-width:520px;
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:100px;height:5px;overflow:hidden;
+  }
+  .prog-fill{
+    height:100%;
+    background:linear-gradient(90deg,var(--accent),#E89060);
+    border-radius:100px;transition:width 0.6s cubic-bezier(0.4,0,0.2,1);
+    width:0%;
+  }
+  .proc-info{text-align:center;display:flex;flex-direction:column;gap:6px;}
+  .proc-section{font-size:14px;font-weight:600;color:var(--text);}
+  .proc-stats{font-family:var(--font-d);font-size:11px;color:var(--text-muted);}
+  .ticker{
+    display:flex;flex-direction:column;gap:4px;
+    width:100%;max-width:520px;max-height:150px;overflow:hidden;
+    position:relative;
+  }
+  .ticker::after{
+    content:'';position:absolute;bottom:0;left:0;right:0;height:60px;
+    background:linear-gradient(transparent,var(--bg));pointer-events:none;
+  }
+  .tick-item{
+    font-family:var(--font-d);font-size:11px;color:var(--text-muted);
+    padding:5px 10px;background:var(--surface);border-radius:5px;
+    border-left:2px solid var(--accent);
+    animation:slideIn 0.3s ease;
+  }
+  @keyframes slideIn{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:translateX(0);}}
+
+  /* ═══ DONE SCREEN ═══ */
+  #screen-done{display:none;padding-bottom:60px;}
+  #screen-done.active{display:block;}
+  .done-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;gap:20px;}
+  .done-stats{display:flex;gap:28px;}
+  .stat-num{font-size:36px;font-weight:700;color:var(--blue-light);line-height:1;letter-spacing:-1px;font-variant-numeric:tabular-nums;}
+  .stat-lbl{font-family:var(--font-d);font-size:10px;letter-spacing:1.5px;color:var(--text-muted);text-transform:uppercase;margin-top:3px;}
+  .done-btns{display:flex;gap:10px;align-items:center;flex-shrink:0;}
+  .btn-dl{
+    background:var(--accent);color:#fff;border:none;
+    border-radius:9px;padding:12px 22px;
+    font-family:var(--font-d);font-size:13px;font-weight:700;
+    cursor:pointer;transition:all 0.2s;
+    display:flex;align-items:center;gap:8px;
+    box-shadow:0 4px 16px var(--accent-glow);
+  }
+  .btn-dl:hover{background:#C06530;transform:translateY(-1px);}
+  .btn-reset{
+    background:transparent;color:var(--text-muted);border:1px solid var(--border);
+    border-radius:9px;padding:12px 18px;
+    font-family:var(--font-d);font-size:12px;cursor:pointer;transition:all 0.2s;
+  }
+  .btn-reset:hover{border-color:var(--border-light);color:var(--text);}
+
+  /* TABS */
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px;}
+  .tab{
+    font-size:12px;font-weight:700;letter-spacing:0.5px;
+    padding:10px 20px;cursor:pointer;color:var(--text-muted);
+    border-bottom:2px solid transparent;transition:all 0.15s;
+  }
+  .tab.active{color:var(--text);border-bottom-color:var(--accent);}
+  .tab:hover:not(.active){color:var(--text);}
+  .tab-c{display:none;}
+  .tab-c.active{display:block;}
+
+  /* GRAPH */
+  #graph-wrap{
+    width:100%;height:530px;background:var(--surface);
+    border:1px solid var(--border);border-radius:14px;
+    overflow:hidden;position:relative;
+  }
+  #graph-wrap svg{width:100%;height:100%;}
+  .g-legend{
+    position:absolute;bottom:16px;left:16px;
+    display:flex;flex-wrap:wrap;gap:8px;max-width:340px;
+  }
+  .g-legend-item{display:flex;align-items:center;gap:5px;font-family:var(--font-d);font-size:10px;color:var(--text-muted);}
+  .g-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .g-hint{
+    position:absolute;top:14px;right:14px;
+    font-family:var(--font-d);font-size:10px;color:var(--text-dim);letter-spacing:0.5px;
+  }
+  .node-tip{
+    position:absolute;background:var(--card2);border:1px solid var(--border-light);
+    border-radius:9px;padding:10px 14px;max-width:220px;pointer-events:none;
+    z-index:10;box-shadow:0 8px 24px rgba(0,0,0,0.5);display:none;
+  }
+  .tip-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;}
+  .tip-tags{font-family:var(--font-d);font-size:10px;color:var(--text-muted);}
+
+  /* NOTES GRID */
+  .notes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+  .note-card{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:16px;padding:18px;cursor:pointer;transition:all 0.15s;
+  }
+  .note-card:hover{border-color:var(--border-light);background:var(--card);}
+  .nc-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;line-height:1.4;}
+  .nc-excerpt{
+    font-family:var(--font-d);font-size:10px;color:var(--text-muted);
+    line-height:1.7;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .nc-footer{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px;}
+  .tag-pill{
+    font-family:var(--font-d);font-size:9px;letter-spacing:0.3px;
+    padding:3px 7px;background:var(--accent-dim);color:var(--accent);border-radius:20px;
+  }
+  .tag-pill-blue{background:var(--blue-dim);color:var(--blue-light);}
+
+  /* MODAL */
+  .modal-overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,0.75);
+    z-index:200;display:flex;align-items:center;justify-content:center;
+    padding:40px;backdrop-filter:blur(6px);
+  }
+  .modal-overlay.hidden{display:none;}
+  .modal{
+    background:var(--card);border:1px solid var(--border-light);
+    border-radius:16px;width:100%;max-width:700px;
+    max-height:82vh;overflow:hidden;display:flex;flex-direction:column;
+    box-shadow:0 24px 60px rgba(0,0,0,0.6);
+  }
+  .modal-hdr{
+    padding:18px 22px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .modal-title-txt{font-size:16px;font-weight:700;}
+  .modal-close{
+    background:none;border:none;color:var(--text-muted);
+    font-size:18px;cursor:pointer;padding:4px 8px;border-radius:4px;line-height:1;
+  }
+  .modal-close:hover{color:var(--text);background:var(--border);}
+  .modal-body{
+    padding:22px;overflow-y:auto;
+    font-family:var(--font-d);font-size:12px;line-height:1.9;
+    color:var(--text);white-space:pre-wrap;
+  }
+  .modal-body::-webkit-scrollbar{width:3px;}
+  .modal-body::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:2px;}
+
+  /* Error toast */
+  .toast{
+    position:fixed;bottom:24px;right:24px;z-index:300;
+    background:var(--card2);border:1px solid #C95F7A;border-radius:12px;
+    padding:12px 18px;font-family:var(--font-d);font-size:11px;color:#E87090;
+    box-shadow:0 8px 24px rgba(0,0,0,0.4);animation:slideIn 0.3s ease;
+    max-width:360px;display:none;
+  }
+
+  @media(max-width:760px){
+    #screen-ready.active{grid-template-columns:1fr;}
+    .done-hdr{flex-direction:column;}
+    .features-row{grid-template-columns:1fr;}
+  }
+
+  /* FOOTER */
+  #app-footer{
+    position:fixed;bottom:0;left:0;right:0;z-index:100;
+    background:rgba(10,10,15,0.85);
+    backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+    border-top:1px solid var(--border);
+    padding:10px 28px;
+    display:flex;align-items:center;justify-content:center;gap:20px;
+    flex-wrap:wrap;
+  }
+  body{padding-bottom:60px;}
+  .footer-line{
+    font-size:11.5px;font-weight:400;color:var(--text-muted);
+    display:flex;align-items:center;justify-content:center;gap:5px;
+  }
+  .footer-divider{color:var(--text-dim);font-size:11px;}
+  .fi{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex-shrink:0;}
+  .fi svg{width:16px;height:16px;}
+  .footer-tag{
+    font-size:9px;font-weight:600;letter-spacing:0.5px;
+    background:var(--blue-dim);color:var(--blue-light);
+    border:1px solid rgba(91,156,246,0.2);border-radius:20px;
+    padding:2px 7px;
+  }
+  .footer-url a{
+    color:var(--text-muted);text-decoration:none;font-weight:500;
+    transition:color 0.15s;
+  }
+  .footer-url a:hover{color:var(--text);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-svg">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496.05 496.05">
+          <circle cx="248.02" cy="248.02" r="240.02" fill="none" stroke="#fff" stroke-miterlimit="10" stroke-width="16"/>
+          <polygon points="414.8 247.47 410.09 270.25 367.27 271.43 339.39 386.13 294.21 385.74 323.68 270.65 258.47 270.65 264.75 247.87 329.57 247.08 365.31 110 410.09 109.6 373.95 247.47 414.8 247.47" fill="#fff"/>
+          <path d="M196.7,262s-16-1-41.88.54c-55.68,3.24-70.22,41-71,63.83-2.4,69.53,84,63.73,109.2-14.34,11.07-34.27,45.19-175.44,46.2-177-36.09-.3-112.1-.45-112.1-.45s2.66-10.16,6.49-23.61l155.25-.25c-.2,1.05-25,106.7-47.43,183.68C215,385.08,146.67,399.39,125,398.4c-34.13-1.54-62.45-27.88-62.45-72.27C62.51,290,92.36,245.7,155.6,246l44.88-.2Z" transform="translate(-1.71 -1.87)" fill="#fff"/>
+        </svg>
+      </div>
+      <div>
+        <div class="logo-name">Vault<em>Forge</em></div>
+        <div class="logo-tagline">Knowledge Extraction Engine</div>
+      </div>
+    </div>
+    <div class="header-meta">PDF · EPUB → OBSIDIAN</div>
+  </header>
+
+  <!-- ═══ IDLE ═══ -->
+  <div id="screen-idle" class="screen active">
+    <div class="drop-zone" id="drop-zone">
+      <span class="drop-icon">◈</span>
+      <div class="drop-title">Drop a document to begin</div>
+      <div class="drop-sub">or click to browse files</div>
+      <div class="format-badges">
+        <span class="badge badge-pdf">PDF</span>
+        <span class="badge badge-epub">EPUB</span>
+      </div>
+    </div>
+    <input type="file" id="file-input" accept=".pdf,.epub">
+
+    <div class="features-row">
+      <div class="feature">
+        <span class="feature-icon">⧉</span>
+        <div class="feature-title">Section Detection</div>
+        <div class="feature-desc">Automatically identifies chapters and logical sections from PDF structure or EPUB spine.</div>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">◈</span>
+        <div class="feature-title">Zettelkasten Notes</div>
+        <div class="feature-desc">LLM generates atomic, deeply interconnected notes with [[wikilinks]] and rich concept maps.</div>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⬡</span>
+        <div class="feature-title">Vault + Graph</div>
+        <div class="feature-desc">Download a ready-to-open Obsidian vault ZIP, plus preview the knowledge graph here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PARSING ═══ -->
+  <div id="screen-parsing" class="screen">
+    <div class="parse-ring"></div>
+    <div class="parse-status" id="parse-status">Analyzing document structure...</div>
+  </div>
+
+  <!-- ═══ READY ═══ -->
+  <div id="screen-ready" class="screen">
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Document Sections</span>
+        <button class="btn-text" id="toggle-all-btn">Deselect all</button>
+      </div>
+      <div class="panel-body">
+        <div class="doc-info" id="doc-info"></div>
+        <div class="sections-list" id="sections-list"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-hdr"><span class="panel-title">Settings</span></div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label class="lbl" for="vault-name">Vault Name</label>
+            <input type="text" id="vault-name" placeholder="My Knowledge Vault">
+          </div>
+          <div class="form-group">
+            <label class="lbl" for="api-key">Anthropic API Key</label>
+            <input type="password" id="api-key" placeholder="sk-ant-... (optional in Claude.ai)">
+            <div class="hint">Leave empty when using inside Claude.ai. Paste your key for standalone use.</div>
+          </div>
+          <div class="form-group">
+            <label class="lbl">Notes per section</label>
+            <div class="range-row">
+              <input type="range" id="notes-count" min="2" max="8" value="5">
+              <span class="range-val" id="notes-count-val">5</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="lbl" for="note-style">Note Style</label>
+            <select class="sel" id="note-style">
+              <option value="zettelkasten">Zettelkasten (atomic)</option>
+              <option value="summary">Summary (thematic)</option>
+              <option value="academic">Academic (structured)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-gen" id="btn-generate">⬡ &nbsp;Generate Vault</button>
+      <div style="margin-top:14px;text-align:center;">
+        <button class="btn-text" onclick="resetApp()">← Start over</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ PROCESSING ═══ -->
+  <div id="screen-processing" class="screen">
+    <div class="proc-title">Forging <em>vault</em>...</div>
+    <div class="prog-wrap"><div class="prog-fill" id="prog-fill"></div></div>
+    <div class="proc-info">
+      <div class="proc-section" id="proc-section">Initializing...</div>
+      <div class="proc-stats" id="proc-stats">0 notes generated</div>
+    </div>
+    <div class="ticker" id="ticker"></div>
+  </div>
+
+  <!-- ═══ DONE ═══ -->
+  <div id="screen-done" class="screen">
+    <div class="done-hdr">
+      <div class="done-stats" id="done-stats"></div>
+      <div class="done-btns">
+        <button class="btn-dl" id="btn-download">↓ &nbsp;Download Vault</button>
+        <button class="btn-reset" onclick="resetApp()">New document</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" data-tab="graph">Graph View</div>
+      <div class="tab" data-tab="notes">Notes</div>
+      <div class="tab" data-tab="raw">Markdown</div>
+    </div>
+
+    <div id="tab-graph" class="tab-c active">
+      <div id="graph-wrap">
+        <div class="node-tip" id="node-tip">
+          <div class="tip-title" id="tip-title"></div>
+          <div class="tip-tags" id="tip-tags"></div>
+        </div>
+        <div class="g-legend" id="g-legend"></div>
+        <div class="g-hint">scroll to zoom · drag to pan · click node to open</div>
+      </div>
+    </div>
+
+    <div id="tab-notes" class="tab-c">
+      <div class="notes-grid" id="notes-grid"></div>
+    </div>
+
+    <div id="tab-raw" class="tab-c">
+      <div class="notes-grid" id="raw-grid"></div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- MODAL -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title-txt" id="modal-title"></div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════
+let S = {
+  file:null, fileType:null, fileName:'',
+  sections:[], selected:new Set(),
+  notes:[], vaultName:'', apiKey:'',
+  notesCount:5, noteStyle:'zettelkasten',
+};
+
+// ════════════════════════════════════════════
+// PDF PARSING
+// ════════════════════════════════════════════
+if(typeof pdfjsLib !== 'undefined'){
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+async function parsePDF(file){
+  setStatus('Loading PDF...');
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:buffer}).promise;
+  const n = pdf.numPages;
+  setStatus(`Extracting text from ${n} pages...`);
+
+  const pages = [];
+  for(let i=1;i<=n;i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    pages.push(content.items.map(it=>({
+      text:it.str,
+      size:Math.abs(it.transform[3]),
+      y:it.transform[5],
+    })));
+  }
+
+  setStatus('Detecting sections...');
+  return pdfSections(pages);
+}
+
+function pdfSections(pages){
+  const all = pages.flat();
+  // Determine body font size (mode)
+  const freq={};
+  all.forEach(i=>{const s=Math.round(i.size);if(s>6&&s<100)freq[s]=(freq[s]||0)+1;});
+  const bodySize = +Object.entries(freq).sort((a,b)=>b[1]-a[1])[0]?.[0] || 11;
+  const hThresh = bodySize * 1.22;
+
+  const sections=[];
+  let title=null, buf=[];
+
+  for(const item of all){
+    const t = item.text.trim();
+    if(!t) continue;
+    const couldBeHeading = item.size > hThresh && t.length > 1 && t.length < 140 && t.split(' ').length <= 16;
+    if(couldBeHeading){
+      if(title && buf.length > 15){
+        sections.push({title, content:buf.join(' '), wordCount:buf.join(' ').split(/\s+/).length});
+      }
+      title = t; buf=[];
+    } else {
+      buf.push(item.text);
+    }
+  }
+  if(title && buf.length > 15) sections.push({title, content:buf.join(' '), wordCount:buf.join(' ').split(/\s+/).length});
+
+  // Fallback: no structure found — split by word count
+  if(sections.length < 2){
+    const allWords = all.map(i=>i.text).join(' ').split(/\s+/).filter(Boolean);
+    const chunk = Math.max(600, Math.floor(allWords.length/8));
+    for(let i=0;i<allWords.length;i+=chunk){
+      const words = allWords.slice(i,i+chunk);
+      sections.push({title:`Part ${Math.floor(i/chunk)+1}`,content:words.join(' '),wordCount:words.length});
+    }
+  }
+  return sections;
+}
+
+// ════════════════════════════════════════════
+// EPUB PARSING
+// ════════════════════════════════════════════
+async function parseEPUB(file){
+  setStatus('Unpacking EPUB...');
+  const buffer = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buffer);
+
+  // Locate OPF
+  setStatus('Reading document structure...');
+  let opfPath = null;
+  const containerFile = zip.file('META-INF/container.xml');
+  if(containerFile){
+    const xml = await containerFile.async('text');
+    const m = xml.match(/full-path="([^"]+\.opf)"/);
+    if(m) opfPath = m[1];
+  }
+  if(!opfPath){
+    for(const k of Object.keys(zip.files)){
+      if(k.endsWith('.opf')){opfPath=k;break;}
+    }
+  }
+
+  let spineItems=[], basePath='';
+  if(opfPath){
+    basePath = opfPath.includes('/') ? opfPath.slice(0,opfPath.lastIndexOf('/')+1) : '';
+    const opfFile = zip.file(opfPath);
+    if(opfFile){
+      const opf = await opfFile.async('text');
+      const manifest={};
+      // collect all xhtml/html items
+      for(const m of opf.matchAll(/<item\s[^>]*id="([^"]+)"[^>]*href="([^"]+)"[^>]*\/>/g)){
+        manifest[m[1]] = m[2];
+      }
+      for(const m of opf.matchAll(/<itemref\s[^>]*idref="([^"]+)"/g)){
+        if(manifest[m[1]]) spineItems.push(manifest[m[1]]);
+      }
+    }
+  }
+  // Fallback
+  if(!spineItems.length){
+    spineItems = Object.keys(zip.files)
+      .filter(p=>(p.endsWith('.html')||p.endsWith('.xhtml'))&&!p.includes('nav')&&!p.includes('toc'))
+      .sort();
+    basePath='';
+  }
+
+  setStatus(`Extracting ${spineItems.length} chapters...`);
+  const sections=[];
+  for(const item of spineItems){
+    const fp = basePath+item;
+    const f = zip.file(fp)||zip.file(item);
+    if(!f) continue;
+    const html = await f.async('text');
+    const {title,text} = parseHTMLChapter(html);
+    const wc = text.split(/\s+/).filter(Boolean).length;
+    if(wc < 40) continue;
+    sections.push({
+      title: title || item.replace(/.*\//,'').replace(/\.x?html$/,''),
+      content:text, wordCount:wc,
+    });
+  }
+  return sections;
+}
+
+function parseHTMLChapter(html){
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  div.querySelectorAll('script,style,nav').forEach(el=>el.remove());
+  const h = div.querySelector('h1,h2,title');
+  const title = h ? h.textContent.trim() : '';
+  const text = div.textContent.replace(/\s+/g,' ').trim();
+  return {title,text};
+}
+
+// ════════════════════════════════════════════
+// LLM
+// ════════════════════════════════════════════
+async function callLLM(secTitle, secContent, docTitle, apiKey, notesCount, style){
+  const MAX_WORDS = 2800;
+  const words = secContent.split(/\s+/);
+  const text = words.length > MAX_WORDS ? words.slice(0,MAX_WORDS).join(' ')+'...' : secContent;
+
+  const stylePrompt = {
+    zettelkasten:`Create ${notesCount} atomic Zettelkasten notes. Each note covers exactly ONE concept. Make them self-contained yet richly interconnected. Use [[wikilinks]] throughout — not just in the connections section.`,
+    summary:`Create ${notesCount} thematic summary notes, each capturing a key argument or theme. Cross-reference generously with [[wikilinks]].`,
+    academic:`Create ${notesCount} academically-structured notes with definitions, evidence, and implications. Maintain scholarly precision and use [[wikilinks]] for cross-referencing.`,
+  }[style] || `Create ${notesCount} atomic notes with [[wikilinks]].`;
+
+  const system = `You are a knowledge architect building an Obsidian Zettelkasten vault. Transform source text into precise, interconnected markdown notes. Return ONLY valid JSON — no preamble, no markdown fences.`;
+
+  const user = `Source document: "${docTitle}"
+Section: "${secTitle}"
+
+TEXT:
+${text}
+
+${stylePrompt}
+
+Return this exact JSON (no other text):
+{
+  "notes": [
+    {
+      "title": "Specific concept noun-phrase (4-10 words)",
+      "content": "# [title]\\n\\n[2-3 paragraphs, 150-280 words, use [[wikilinks]] inline]\\n\\n## Connections\\n[[Link A]] · [[Link B]] · [[Link C]]\\n\\n## Key Points\\n- concrete insight 1\\n- concrete insight 2\\n- concrete insight 3",
+      "tags": ["lowercase-tag", "second-tag"],
+      "links": ["Link A", "Link B", "Link C"]
+    }
+  ]
+}
+
+Rules: title = specific noun-phrase using document's own terminology. tags = 2-3, lowercase-hyphenated. links = titles of notes this one references (can include notes from other sections). Content must be dense and substantive, not generic.`;
+
+  const headers = {'Content-Type':'application/json'};
+  const key = apiKey?.trim();
+  if(key && key.startsWith('sk-')){
+    headers['x-api-key'] = key;
+    headers['anthropic-version'] = '2023-06-01';
+  }
+
+  const res = await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST', headers,
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:2500,
+      system,
+      messages:[{role:'user',content:user}],
+    }),
+  });
+
+  if(!res.ok){
+    const err = await res.text();
+    throw new Error(`API ${res.status}: ${err.slice(0,200)}`);
+  }
+
+  const data = await res.json();
+  const raw = data.content?.[0]?.text || '';
+  try{
+    const clean = raw.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim();
+    return JSON.parse(clean).notes || [];
+  }catch(e){
+    const match = raw.match(/\{[\s\S]*"notes"[\s\S]*\}/);
+    if(match) try{ return JSON.parse(match[0]).notes||[]; }catch{}
+    console.warn('JSON parse failed:',raw.slice(0,300));
+    return [];
+  }
+}
+
+// ════════════════════════════════════════════
+// VAULT ZIP
+// ════════════════════════════════════════════
+function buildVaultZip(notes, vaultName){
+  const zip = new JSZip();
+  const vf = zip.folder(vaultName||'vault');
+  const nf = vf.folder('notes');
+  const date = new Date().toISOString().split('T')[0];
+  const src = S.fileName.replace(/\.(pdf|epub)$/i,'');
+
+  for(const note of notes){
+    const fm = `---\ntitle: "${note.title.replace(/"/g,"'")}"\ntags: [${(note.tags||[]).map(t=>t.replace(/\s+/g,'-')).join(', ')}]\ncreated: ${date}\nsource: "${src}"\n---\n\n`;
+    nf.file(safeName(note.title)+'.md', fm+(note.content||''));
+  }
+
+  // Link frequency for hub detection
+  const lc={};
+  notes.forEach(n=>(n.links||[]).forEach(l=>{lc[l]=(lc[l]||0)+1;}));
+  const hubs = notes.filter(n=>(lc[n.title]||0)>=2)
+    .sort((a,b)=>(lc[b.title]||0)-(lc[a.title]||0)).slice(0,10);
+
+  // Tag clusters
+  const tagGroups={};
+  notes.forEach(n=>{const t=n.tags?.[0]||'general';(tagGroups[t]=tagGroups[t]||[]).push(n);});
+
+  const moc = `---\ntitle: "Index — ${src}"\ntags: [moc, index]\ncreated: ${date}\n---\n\n# Knowledge Map: ${src}\n\n*Generated by VaultForge · ${notes.length} notes · ${date}*\n\n## Hub Concepts\n${hubs.map(n=>`- [[${n.title}]] *(${lc[n.title]} links)*`).join('\n')||'- Processing complete'}\n\n## Concept Clusters\n${Object.entries(tagGroups).map(([tag,ns])=>`\n### ${tag}\n${ns.map(n=>`- [[${n.title}]]`).join('\n')}`).join('\n')}\n\n---\n\n## All Notes\n${notes.map(n=>`[[${n.title}]]`).join(' · ')}\n`;
+
+  vf.file('_index.md', moc);
+  vf.file('README.md', `# ${vaultName||'VaultForge Vault'}\n\nGenerated from: **${src}**\n\nOpen this folder as an Obsidian vault. Start with [[_index]] for the knowledge map.\n\n**Stats:** ${notes.length} notes · ${date}\n`);
+  return zip;
+}
+
+function safeName(t){
+  return t.replace(/[<>:"/\\|?*]/g,'').replace(/\s+/g,' ').trim().slice(0,100);
+}
+
+// ════════════════════════════════════════════
+// UI HELPERS
+// ════════════════════════════════════════════
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+}
+function setStatus(msg){ document.getElementById('parse-status').textContent=msg; }
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.display='block';
+  setTimeout(()=>t.style.display='none',4000);
+}
+function resetApp(){
+  S={file:null,fileType:null,fileName:'',sections:[],selected:new Set(),notes:[],vaultName:'',apiKey:'',notesCount:5,noteStyle:'zettelkasten'};
+  d3.select('#graph-wrap svg').remove();
+  document.getElementById('g-legend').innerHTML='';
+  showScreen('idle');
+}
+
+// ════════════════════════════════════════════
+// FILE HANDLING
+// ════════════════════════════════════════════
+const dz = document.getElementById('drop-zone');
+const fi = document.getElementById('file-input');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+dz.addEventListener('click',()=>fi.click());
+fi.addEventListener('change',()=>{if(fi.files[0])handleFile(fi.files[0]);fi.value='';});
+
+async function handleFile(file){
+  const name = file.name.toLowerCase();
+  if(!name.endsWith('.pdf')&&!name.endsWith('.epub')){
+    showToast('Please upload a PDF or EPUB file.');return;
+  }
+  S.file=file; S.fileName=file.name;
+  S.fileType=name.endsWith('.pdf')?'pdf':'epub';
+  showScreen('parsing');
+  try{
+    S.sections = S.fileType==='pdf' ? await parsePDF(file) : await parseEPUB(file);
+    S.selected = new Set(S.sections.map((_,i)=>i));
+    buildReadyScreen();
+    showScreen('ready');
+  }catch(err){
+    console.error(err);
+    showToast('Error parsing: '+err.message);
+    showScreen('idle');
+  }
+}
+
+// ════════════════════════════════════════════
+// READY SCREEN
+// ════════════════════════════════════════════
+function buildReadyScreen(){
+  const totalWords = S.sections.reduce((a,s)=>a+s.wordCount,0);
+  document.getElementById('doc-info').innerHTML=`
+    <div class="doc-name">${S.fileName}</div>
+    <div class="doc-meta">${S.sections.length} sections · ~${totalWords.toLocaleString()} words · ${S.fileType.toUpperCase()}</div>`;
+  document.getElementById('vault-name').value = S.fileName.replace(/\.(pdf|epub)$/i,'')+' Vault';
+
+  const list=document.getElementById('sections-list');
+  list.innerHTML=S.sections.map((s,i)=>`
+    <div class="sec-item" onclick="toggleSec(${i})">
+      <input type="checkbox" id="sc${i}" checked>
+      <label class="sec-label" for="sc${i}">${s.title}</label>
+      <span class="sec-words">${s.wordCount.toLocaleString()}w</span>
+    </div>`).join('');
+}
+
+function toggleSec(i){
+  const cb=document.getElementById('sc'+i);
+  if(S.selected.has(i)){S.selected.delete(i);cb.checked=false;}
+  else{S.selected.add(i);cb.checked=true;}
+}
+
+let allSel=true;
+document.getElementById('toggle-all-btn').addEventListener('click',()=>{
+  allSel=!allSel;
+  S.sections.forEach((_,i)=>{
+    const cb=document.getElementById('sc'+i);
+    if(cb)cb.checked=allSel;
+    if(allSel)S.selected.add(i); else S.selected.delete(i);
+  });
+  document.getElementById('toggle-all-btn').textContent=allSel?'Deselect all':'Select all';
+});
+
+document.getElementById('notes-count').addEventListener('input',function(){
+  document.getElementById('notes-count-val').textContent=this.value;
+  S.notesCount=+this.value;
+});
+
+document.getElementById('btn-generate').addEventListener('click',startProcessing);
+
+// ════════════════════════════════════════════
+// PROCESSING
+// ════════════════════════════════════════════
+async function startProcessing(){
+  S.vaultName=document.getElementById('vault-name').value||'My Vault';
+  S.apiKey=document.getElementById('api-key').value||'';
+  S.notesCount=+document.getElementById('notes-count').value;
+  S.noteStyle=document.getElementById('note-style').value;
+
+  const secs = S.sections.filter((_,i)=>S.selected.has(i));
+  if(!secs.length){showToast('Select at least one section.');return;}
+
+  showScreen('processing');
+  const docTitle = S.fileName.replace(/\.(pdf|epub)$/i,'');
+  const allNotes=[];
+  const ticker=document.getElementById('ticker');
+
+  for(let i=0;i<secs.length;i++){
+    const sec=secs[i];
+    const pct=Math.round(i/secs.length*100);
+    document.getElementById('prog-fill').style.width=pct+'%';
+    document.getElementById('proc-section').textContent=sec.title;
+    document.getElementById('proc-stats').textContent=`Section ${i+1} of ${secs.length} · ${allNotes.length} notes so far`;
+
+    try{
+      const notes=await callLLM(sec.title,sec.content,docTitle,S.apiKey,S.notesCount,S.noteStyle);
+      for(const note of notes){
+        allNotes.push(note);
+        const el=document.createElement('div');
+        el.className='tick-item';
+        el.textContent='+ '+note.title;
+        ticker.insertBefore(el,ticker.firstChild);
+        if(ticker.children.length>7)ticker.removeChild(ticker.lastChild);
+      }
+      document.getElementById('proc-stats').textContent=`Section ${i+1} of ${secs.length} · ${allNotes.length} notes`;
+    }catch(err){
+      console.error('Section error:',sec.title,err);
+      showToast('Skipped "'+sec.title+'": '+err.message.slice(0,80));
+    }
+    await new Promise(r=>setTimeout(r,350));
+  }
+
+  document.getElementById('prog-fill').style.width='100%';
+  S.notes=allNotes;
+  await new Promise(r=>setTimeout(r,700));
+  buildDoneScreen();
+  showScreen('done');
+}
+
+// ════════════════════════════════════════════
+// DONE SCREEN
+// ════════════════════════════════════════════
+function buildDoneScreen(){
+  const notes=S.notes;
+  const linkCount=notes.reduce((a,n)=>a+(n.links?.length||0),0);
+  const tagCount=new Set(notes.flatMap(n=>n.tags||[])).size;
+  document.getElementById('done-stats').innerHTML=`
+    <div><div class="stat-num">${notes.length}</div><div class="stat-lbl">Notes</div></div>
+    <div><div class="stat-num">${linkCount}</div><div class="stat-lbl">Links</div></div>
+    <div><div class="stat-num">${tagCount}</div><div class="stat-lbl">Concepts</div></div>`;
+
+  document.getElementById('btn-download').onclick=async()=>{
+    const btn=document.getElementById('btn-download');
+    btn.textContent='↓  Building ZIP...';
+    btn.disabled=true;
+    try{
+      const zip=buildVaultZip(S.notes,S.vaultName);
+      const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=(S.vaultName||'vault').replace(/[^a-z0-9_\-\s]/gi,'_')+'.zip';
+      a.style.display='none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{URL.revokeObjectURL(url);document.body.removeChild(a);},8000);
+    }catch(err){
+      console.error('Download failed:',err);
+      showToast('Download failed: '+err.message);
+    }finally{
+      btn.textContent='↓  Download Vault';
+      btn.disabled=false;
+    }
+  };
+
+  buildNotesGrid();
+  buildRawGrid();
+  setTimeout(()=>renderGraph(notes),120);
+}
+
+function buildNotesGrid(){
+  document.getElementById('notes-grid').innerHTML=S.notes.map((n,i)=>`
+    <div class="note-card" onclick="openModal(${i})">
+      <div class="nc-title">${n.title}</div>
+      <div class="nc-excerpt">${(n.content||'').replace(/#+\s/g,'').replace(/\[\[|\]\]/g,'').slice(0,220)}</div>
+      <div class="nc-footer">${(n.tags||[]).map(t=>`<span class="tag-pill">${t}</span>`).join('')}${(n.links?.length)?`<span class="tag-pill tag-pill-blue">${n.links.length} links</span>`:''}</div>
+    </div>`).join('');
+}
+
+function buildRawGrid(){
+  document.getElementById('raw-grid').innerHTML=S.notes.map((n,i)=>`
+    <div class="note-card">
+      <div class="nc-title">${n.title}</div>
+      <div class="nc-excerpt" style="-webkit-line-clamp:4;font-size:10px;">${n.content||''}</div>
+      <div class="nc-footer" style="margin-top:12px;">
+        <span class="tag-pill tag-pill-blue" style="cursor:pointer;" onclick="copyNote(${i})">⎘ Copy</span>
+        <span class="tag-pill" style="cursor:pointer;" onclick="openModal(${i})">Preview</span>
+      </div>
+    </div>`).join('');
+}
+
+function copyNote(i){
+  const n=S.notes[i];
+  const fm=`---\ntitle: "${n.title}"\ntags: [${(n.tags||[]).join(', ')}]\n---\n\n`;
+  navigator.clipboard.writeText(fm+(n.content||'')).catch(()=>{});
+}
+
+function openModal(i){
+  const n=S.notes[i];
+  document.getElementById('modal-title').textContent=n.title;
+  const fm=`---\ntitle: "${n.title}"\ntags: [${(n.tags||[]).join(', ')}]\nsource: "${S.fileName}"\n---\n\n`;
+  document.getElementById('modal-body').textContent=fm+(n.content||'');
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+function closeModal(){ document.getElementById('modal-overlay').classList.add('hidden'); }
+document.getElementById('modal-overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    const t=tab.dataset.tab;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.tab-c').forEach(x=>x.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+t).classList.add('active');
+    if(t==='graph') renderGraph(S.notes);
+  });
+});
+
+// ════════════════════════════════════════════
+// D3 GRAPH
+// ════════════════════════════════════════════
+const COLORS=['#D4723C','#4A6E8E','#4CAF82','#9B7BB5','#E8AC5A','#5BA8C4','#C95F7A','#7AB55C','#E8D45A','#A07090'];
+
+function renderGraph(notes){
+  const container=document.getElementById('graph-wrap');
+  d3.select(container).select('svg').remove();
+  if(!notes.length)return;
+
+  const W=container.offsetWidth, H=container.offsetHeight||530;
+  const allTags=[...new Set(notes.flatMap(n=>n.tags||[]))];
+  const tagColor=Object.fromEntries(allTags.map((t,i)=>[t,COLORS[i%COLORS.length]]));
+
+  // Build nodes
+  const nodes=notes.map((n,i)=>({
+    id:i, title:n.title, tags:n.tags||[],
+    color:tagColor[n.tags?.[0]]||COLORS[0],
+    lc:0,
+  }));
+
+  // Build edges (deduplicated)
+  const seen=new Set(), edges=[];
+  notes.forEach((n,i)=>{
+    (n.links||[]).forEach(link=>{
+      const j=notes.findIndex(x=>x.title.toLowerCase()===link.toLowerCase()||
+        (link.length>12&&x.title.toLowerCase().includes(link.toLowerCase().slice(0,12))));
+      if(j!==-1&&j!==i){
+        const key=[Math.min(i,j),Math.max(i,j)].join('-');
+        if(!seen.has(key)){seen.add(key);edges.push({source:i,target:j});nodes[i].lc++;nodes[j].lc++;}
+      }
+    });
+  });
+
+  const svg=d3.select(container).append('svg').attr('width',W).attr('height',H);
+  const g=svg.append('g');
+
+  svg.call(d3.zoom().scaleExtent([0.2,4]).on('zoom',e=>g.attr('transform',e.transform)));
+
+  const sim=d3.forceSimulation(nodes)
+    .force('link',d3.forceLink(edges).id(d=>d.id).distance(90).strength(0.5))
+    .force('charge',d3.forceManyBody().strength(-200))
+    .force('center',d3.forceCenter(W/2,H/2))
+    .force('col',d3.forceCollide(18));
+
+  const link=g.append('g').selectAll('line').data(edges).join('line')
+    .attr('stroke','rgba(74,110,142,0.25)').attr('stroke-width',1);
+
+  const drag=d3.drag()
+    .on('start',(e,d)=>{if(!e.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+    .on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y;})
+    .on('end',(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;});
+
+  const node=g.append('g').selectAll('g').data(nodes).join('g')
+    .style('cursor','pointer').call(drag);
+
+  // Outer glow ring for highly-linked nodes
+  node.filter(d=>d.lc>2).append('circle')
+    .attr('r',d=>10+Math.min(d.lc*1.5,12))
+    .attr('fill','none')
+    .attr('stroke',d=>d.color)
+    .attr('stroke-width',1)
+    .attr('stroke-opacity',0.2);
+
+  node.append('circle')
+    .attr('r',d=>5+Math.min(d.lc*1.2,10))
+    .attr('fill',d=>d.color)
+    .attr('fill-opacity',0.9)
+    .attr('stroke',d=>d.color)
+    .attr('stroke-width',1.5)
+    .attr('stroke-opacity',0.5);
+
+  const tip=document.getElementById('node-tip');
+  node
+    .on('mouseover',(e,d)=>{
+      tip.style.display='block';
+      document.getElementById('tip-title').textContent=d.title;
+      document.getElementById('tip-tags').textContent=d.tags.join(' · ')+(d.lc?' · '+d.lc+' links':'');
+      const r=container.getBoundingClientRect();
+      tip.style.left=(e.clientX-r.left+14)+'px';
+      tip.style.top=(e.clientY-r.top-44)+'px';
+    })
+    .on('mousemove',(e)=>{
+      const r=container.getBoundingClientRect();
+      tip.style.left=(e.clientX-r.left+14)+'px';
+      tip.style.top=(e.clientY-r.top-44)+'px';
+    })
+    .on('mouseout',()=>tip.style.display='none')
+    .on('click',(e,d)=>{
+      const i=S.notes.findIndex(n=>n.title===d.title);
+      if(i!==-1)openModal(i);
+    });
+
+  sim.on('tick',()=>{
+    link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+        .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+    node.attr('transform',d=>`translate(${d.x},${d.y})`);
+  });
+
+  // Legend
+  document.getElementById('g-legend').innerHTML=allTags.slice(0,7).map(t=>`
+    <div class="g-legend-item">
+      <div class="g-dot" style="background:${tagColor[t]}"></div>
+      <span>${t}</span>
+    </div>`).join('');
+}
+</script>
+
+<!-- FOOTER -->
+<footer id="app-footer">
+  <div class="footer-line">
+    Ideated with
+    <!-- heart: red -->
+    <span class="fi"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#E53935"/></svg></span>
+    by Julian Hilgemann
+  </div>
+  <span class="footer-divider">·</span>
+  <div class="footer-line">
+    Executed with
+    <!-- brain: blue abstract -->
+    <span class="fi"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C9.5 3 7.5 4.8 7.1 7.1A4 4 0 005 11a4 4 0 001 7.4V20h12v-1.6A4 4 0 0019 11a4 4 0 00-2.1-3.9C16.5 4.8 14.5 3 12 3z" fill="#1E88E5" opacity=".3"/><path d="M9 10.5a1.5 1.5 0 103 0 1.5 1.5 0 00-3 0zM12 10.5a1.5 1.5 0 103 0 1.5 1.5 0 00-3 0z" fill="#1E88E5"/><path d="M8 14h8M10 16.5h4" stroke="#1E88E5" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="7" r="1" fill="#1E88E5"/></svg></span>
+    Claude Sonnet 4.6 <span class="footer-tag">Two Shot Prompt</span>
+  </div>
+  <span class="footer-divider">·</span>
+  <div class="footer-line footer-url">
+    <!-- globe: grid style -->
+    <span class="fi"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#636380" stroke-width="1.5"/><ellipse cx="12" cy="12" rx="4" ry="9" stroke="#636380" stroke-width="1.5"/><line x1="3" y1="8" x2="21" y2="8" stroke="#636380" stroke-width="1.5"/><line x1="3" y1="16" x2="21" y2="16" stroke="#636380" stroke-width="1.5"/><line x1="12" y1="3" x2="12" y2="21" stroke="#636380" stroke-width="1"/></svg></span>
+    <a href="https://www.julianhilgemann.com" target="_blank" rel="noopener">www.julianhilgemann.com</a>
+  </div>
+</footer>
+</body>
+</html>
