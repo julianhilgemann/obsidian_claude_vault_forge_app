@@ -4,7 +4,7 @@
 
 [![VaultForge Screenshot](https://raw.githubusercontent.com/julianhilgemann/vaultforge/refs/heads/main/vaultforge_main_screenshot_03042026.png)](https://julianhilgemann.github.io/vaultforge/)
 
-🔗 **[Live Demo → julianhilgemann.github.io/vaultforge](julianhilgemann.github.io/obsidian_claude_vault_forge_app/)**
+🔗 **[Live Demo](julianhilgemann.github.io/obsidian_claude_vault_forge_app/)**
 
 ---
 
