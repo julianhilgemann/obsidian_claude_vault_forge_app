@@ -2,7 +2,7 @@
 
 **Drop a PDF or EPUB. Get an Obsidian vault.**
 
-[![VaultForge Screenshot](https://raw.githubusercontent.com/julianhilgemann/vaultforge/refs/heads/main/vaultforge_main_screenshot_03042026.png)](https://julianhilgemann.github.io/vaultforge/)
+[![VaultForge Screenshot](https://raw.githubusercontent.com/julianhilgemann/obsidian_claude_vault_forge_app/refs/heads/main/vaultforge_main_screenshot_03042026.png)](https://julianhilgemann.github.io/obsidian_claude_vault_forge_app/)
 
 🔗 **https://julianhilgemann.github.io/obsidian_claude_vault_forge_app/**
 
